@@ -1,85 +1,34 @@
-use std::sync::Arc;
+use game_engine::{AppBuilder, Camera, UpdateCtx, renderer::RenderCtx};
 
-use game_engine::renderer::{Model, State};
-use winit::{
-    application::ApplicationHandler,
-    event::WindowEvent,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    window::{Window, WindowId},
-};
+struct GameState {
+    camera: Camera,
+    model: game_engine::Model, // load with AppBuilder::with_init
+}
 
 fn main() {
-    // wgpu uses `log` for all of our logging, so we initialize a logger with the `env_logger` crate.
-    //
-    // To change the log level, set the `RUST_LOG` environment variable. See the `env_logger`
-    // documentation for more information.
-    env_logger::init();
-
-    let event_loop = EventLoop::new().unwrap();
-
-    // When the current loop iteration finishes, immediately begin a new
-    // iteration regardless of whether or not new events are available to
-    // process. Preferred for applications that want to render as fast as
-    // possible, like games.
-    event_loop.set_control_flow(ControlFlow::Poll);
-
-    // When the current loop iteration finishes, suspend the thread until
-    // another event arrives. Helps keeping CPU utilization low if nothing
-    // is happening, which is preferred if the application might be idling in
-    // the background.
-    // event_loop.set_control_flow(ControlFlow::Wait);
-
-    let mut app = App::default();
-    event_loop.run_app(&mut app).unwrap();
-}
-
-struct DisplayState {
-    renderer_state: State,
-    model: Model,
-}
-
-#[derive(Default)]
-struct App {
-    state: Option<DisplayState>,
-}
-
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        // Create window object
-        let window = Arc::new(
-            event_loop
-                .create_window(Window::default_attributes())
-                .unwrap(),
-        );
-
-        let state = pollster::block_on(State::new(window.clone()));
-        let model = pollster::block_on(state.load_model("cube.obj")).unwrap();
-        self.state = Some(DisplayState {
-            renderer_state: state,
-            model,
-        });
-
-        window.request_redraw();
-    }
-
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        let state = self.state.as_mut().unwrap();
-        match event {
-            WindowEvent::CloseRequested => {
-                println!("The close button was pressed; stopping");
-                event_loop.exit();
-            }
-            WindowEvent::RedrawRequested => {
-                state.renderer_state.render(&[&state.model], &[]);
-                // Emits a new redraw requested event.
-                state.renderer_state.get_window().request_redraw();
-            }
-            WindowEvent::Resized(size) => {
-                // Reconfigures the size of the surface. We do not re-render
-                // here as this event is always followed up by redraw request.
-                state.renderer_state.resize(size);
-            }
-            _ => (),
+    AppBuilder::with_init(|renderer| {
+        // let pipeline = renderer.pipeline_builder().fragment_shader(module, entry);
+        GameState {
+            camera: Camera {
+                eye: (2.0, 4.0, 8.0).into(),
+                target: (0.0, 0.0, 0.0).into(),
+                up: cgmath::Vector3::unit_y(),
+                aspect: 1.0,
+                fovy: 45.0,
+                znear: 0.1,
+                zfar: 100.0,
+            },
+            model: pollster::block_on(renderer.load_model("12221_Cat_v1_l3.obj")).unwrap(),
         }
-    }
+    })
+    .run(
+        |state: &mut GameState, ctx: &UpdateCtx| {
+            let (w, h) = ctx.window_size;
+            state.camera.aspect = w as f32 / h as f32;
+        },
+        |state: &mut GameState, ctx: &mut RenderCtx<'_>| {
+            ctx.set_camera(&state.camera);
+            ctx.draw_model(&state.model);
+        },
+    );
 }
